@@ -297,6 +297,9 @@ tifftags = {
     TIFFTAG_TILEDEPTH: (ctypes.c_uint32, lambda d:d.value),
     TIFFTAG_TILELENGTH: (ctypes.c_uint32, lambda d:d.value),
     TIFFTAG_TILEWIDTH: (ctypes.c_uint32, lambda d:d.value),
+    TIFFTAG_DNGVERSION: (ctypes.c_ubyte*4, lambda d:d.contents[:]),
+    TIFFTAG_BLACKLEVEL: (ctypes.POINTER(ctypes.c_double), lambda d:d.contents),
+    TIFFTAG_WHITELEVEL: (ctypes.POINTER(ctypes.c_uint32), lambda d:d.contents.value),
 
     TIFFTAG_STRIPBYTECOUNTS: (ctypes.POINTER(ctypes.c_uint32), lambda d:d.contents),
     TIFFTAG_STRIPOFFSETS: (ctypes.POINTER(ctypes.c_uint32), lambda d:d.contents),
@@ -340,7 +343,13 @@ tifftags = {
     TIFFTAG_WHITEPOINT: (ctypes.c_float*2, lambda d:d.contents[:]),
     TIFFTAG_YCBCRCOEFFICIENTS: (ctypes.c_float*3, lambda d:d.contents[:]),
 
-    TIFFTAG_CZ_LSMINFO: (c_toff_t, lambda d:d.value) # offset to CZ_LSMINFO record
+    TIFFTAG_CZ_LSMINFO: (c_toff_t, lambda d:d.value), # offset to CZ_LSMINFO record
+
+    TIFFTAG_CFAPATTERN: (ctypes.c_char*4, lambda d:d.contents[:]),
+    TIFFTAG_CFAREPEATPATTERNDIM: (ctypes.c_uint16*2, lambda d:d.contents[:]),
+    TIFFTAG_COLORMATRIX1: (ctypes.c_float*9, lambda d:d.contents[:]),
+    TIFFTAG_ASSHOTNEUTRAL: (ctypes.c_float*3, lambda d:d.contents[:]),
+    TIFFTAG_ASSHOTWHITEXY: (ctypes.c_float*2, lambda d:d.contents[:])
 
 }
 
@@ -811,7 +820,7 @@ class TIFF(ctypes.c_void_p):
         return
     #def (self): return libtiff.TIFF(self)
 
-    @debug
+    #@debug
     def GetField(self, tag, ignore_undefined_tag=True, count=None):
         """ Return TIFF field value with tag.
 
@@ -862,12 +871,14 @@ class TIFF(ctypes.c_void_p):
             else:
                 data = data_type()
 
+            print '-------------------------', data
             if count is None:
                 libtiff.TIFFGetField.argtypes = libtiff.TIFFGetField.argtypes[:2] + [ctypes.c_void_p]
                 r = libtiff.TIFFGetField(self, tag, ctypes.byref(data))
             else:
-                libtiff.TIFFGetField.argtypes = libtiff.TIFFGetField.argtypes[:2] + [ctypes.c_uint, ctypes.c_void_p]
-                r = libtiff.TIFFGetField(self, tag, count, ctypes.byref(data))
+                count = ctypes.c_int(count)
+                libtiff.TIFFGetField.argtypes = libtiff.TIFFGetField.argtypes[:2] + [ctypes.POINTER(ctypes.c_int), ctypes.c_void_p]
+                r = libtiff.TIFFGetField(self, tag, ctypes.byref(count), ctypes.byref(data))
         if not r: # tag not defined for current directory
             if not ignore_undefined_tag:
                 print 'Warning: tag %r not defined in currect directory' % (tag)
@@ -890,8 +901,8 @@ class TIFF(ctypes.c_void_p):
             print 'Warning: no tag %r defined' % (tag)
             return
         data_type, convert = t
-        if data_type == ctypes.c_float:
-            data_type = ctypes.c_double
+        #if data_type == ctypes.c_float:
+        #    data_type = ctypes.c_double
 
         if tag == TIFFTAG_COLORMAP:
             # ColorMap passes 3 values each a c_uint16 pointer
@@ -915,7 +926,7 @@ class TIFF(ctypes.c_void_p):
             libtiff.TIFFSetField.argtypes = libtiff.TIFFSetField.argtypes[:2] + [ctypes.POINTER(data_type)]*3
             r = libtiff.TIFFSetField(self, tag, r_ptr, g_ptr, b_ptr)
         else:
-            if issubclass(data_type, (ctypes.Array, tuple, list)):
+            if issubclass(data_type, ctypes.Array):
                 data = data_type(*value)
             elif issubclass(data_type, ctypes._Pointer): # does not include c_char_p
                 # convert to the base type, ctypes will take care of actually
